@@ -3,117 +3,143 @@ import { supabase } from '../supabaseClient';
 
 function Reportes() {
     const [ventas, setVentas] = useState([]);
-    const [resumen, setResumen] = useState({ totalDia: 0, efectivo: 0, tarjeta: 0 });
+    const [gastos, setGastos] = useState([]); // Nuevo estado para gastos
+    const [resumen, setResumen] = useState({
+        totalVentas: 0,
+        efectivoVentas: 0,
+        otrosPagos: 0,
+        totalGastos: 0,
+        cajaFinal: 0
+    });
 
     useEffect(() => {
-        fetchVentas();
+        fetchDatos();
     }, []);
 
-    async function fetchVentas() {
-        // 1. Pedimos las ventas ordenadas por fecha (las más nuevas arriba)
-        const { data, error } = await supabase
+    async function fetchDatos() {
+        const hoy = new Date().toISOString().slice(0, 10); // Fecha "YYYY-MM-DD"
+
+        // 1. Obtener Ventas
+        const { data: dataVentas } = await supabase
             .from('ventas')
             .select('*')
             .order('fecha', { ascending: false });
 
-        if (error) {
-            console.error('Error cargando ventas:', error);
-        } else {
-            setVentas(data);
-            calcularResumen(data);
-        }
+        // 2. Obtener Gastos
+        const { data: dataGastos } = await supabase
+            .from('movimientos_caja')
+            .select('*')
+            .eq('tipo', 'salida') // Solo salidas
+            .order('fecha', { ascending: false });
+
+        setVentas(dataVentas || []);
+        setGastos(dataGastos || []);
+
+        calcularResumen(dataVentas || [], dataGastos || [], hoy);
     }
 
-    // 2. Función matemática para calcular cuánto vendiste HOY
-    function calcularResumen(datos) {
-        const hoy = new Date().toISOString().slice(0, 10); // Obtenemos fecha de hoy "2023-10-25"
-
-        let total = 0;
+    function calcularResumen(listaVentas, listaGastos, fechaHoy) {
+        let totalV = 0;
         let efectivo = 0;
         let tarjeta = 0;
+        let totalG = 0;
 
-        datos.forEach(venta => {
-            // Convertimos la fecha de la venta para compararla
-            const fechaVenta = venta.fecha.slice(0, 10);
-
-            if (fechaVenta === hoy) {
-                total += venta.total;
-                if (venta.metodo_pago === 'Efectivo') efectivo += venta.total;
-                else tarjeta += venta.total; // Asumimos tarjeta u otros
+        // Sumar Ventas de HOY
+        listaVentas.forEach(v => {
+            if (v.fecha.startsWith(fechaHoy)) {
+                totalV += v.total;
+                if (v.metodo_pago === 'Efectivo') efectivo += v.total;
+                else tarjeta += v.total;
             }
         });
 
-        setResumen({ totalDia: total, efectivo, tarjeta });
-    }
+        // Sumar Gastos de HOY
+        listaGastos.forEach(g => {
+            if (g.fecha.startsWith(fechaHoy)) {
+                totalG += g.monto;
+            }
+        });
 
-    // Función para formatear la fecha a algo legible
-    const formatearFecha = (fechaISO) => {
-        const fecha = new Date(fechaISO);
-        return fecha.toLocaleString(); // Ejemplo: 25/10/2023, 14:30:00
-    };
+        setResumen({
+            totalVentas: totalV,
+            efectivoVentas: efectivo,
+            otrosPagos: tarjeta,
+            totalGastos: totalG,
+            cajaFinal: efectivo - totalG // Lo que debería haber en billetes físicos
+        });
+    }
 
     return (
         <div className="container">
-            <h2>📊 Reporte de Ventas</h2>
+            <h2>📊 Corte de Caja (Día de Hoy)</h2>
 
-            {/* TARJETAS DE RESUMEN (DASHBOARD) */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '30px' }}>
+            {/* DASHBOARD PRINCIPAL */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px', marginBottom: '30px' }}>
 
-                <div style={{ background: '#28a745', color: 'white', padding: '20px', borderRadius: '10px' }}>
-                    <h3>Venta Total Hoy</h3>
-                    <h1 style={{ margin: 0 }}>${resumen.totalDia.toFixed(2)}</h1>
+                {/* Ventas Totales */}
+                <div style={{ background: 'white', padding: '20px', borderRadius: '10px', boxShadow: '0 2px 5px rgba(0,0,0,0.1)' }}>
+                    <h4 style={{ margin: 0, color: '#666' }}>Ventas Totales</h4>
+                    <h2 style={{ margin: '10px 0', color: '#28a745' }}>${resumen.totalVentas.toFixed(2)}</h2>
+                    <small>Efectivo: ${resumen.efectivoVentas} | Otros: ${resumen.otrosPagos}</small>
                 </div>
 
-                <div style={{ background: '#17a2b8', color: 'white', padding: '20px', borderRadius: '10px' }}>
-                    <h3>En Efectivo</h3>
-                    <h2 style={{ margin: 0 }}>${resumen.efectivo.toFixed(2)}</h2>
+                {/* Gastos */}
+                <div style={{ background: 'white', padding: '20px', borderRadius: '10px', boxShadow: '0 2px 5px rgba(0,0,0,0.1)', borderLeft: '5px solid #dc3545' }}>
+                    <h4 style={{ margin: 0, color: '#666' }}>Salidas / Gastos</h4>
+                    <h2 style={{ margin: '10px 0', color: '#dc3545' }}>-${resumen.totalGastos.toFixed(2)}</h2>
+                    <small>Dinero que salió de caja</small>
                 </div>
 
-                <div style={{ background: '#ffc107', color: '#333', padding: '20px', borderRadius: '10px' }}>
-                    <h3>En Tarjeta/Otros</h3>
-                    <h2 style={{ margin: 0 }}>${resumen.tarjeta.toFixed(2)}</h2>
+                {/* CAJA FINAL (Lo importante) */}
+                <div style={{ background: '#333', color: 'white', padding: '20px', borderRadius: '10px', boxShadow: '0 4px 10px rgba(0,0,0,0.2)' }}>
+                    <h4 style={{ margin: 0, color: '#ccc' }}>💰 EFECTIVO EN CAJA</h4>
+                    <h1 style={{ margin: '10px 0', color: '#ffc107' }}>${resumen.cajaFinal.toFixed(2)}</h1>
+                    <small>Debes tener esto en billetes</small>
                 </div>
 
             </div>
 
-            <button onClick={fetchVentas} style={{ marginBottom: '15px', padding: '10px' }}>🔄 Actualizar Datos</button>
+            <button onClick={fetchDatos} style={{ marginBottom: '20px', padding: '10px' }}>🔄 Actualizar Datos</button>
 
-            {/* TABLA DE HISTORIAL */}
-            <table border="1" style={{ width: '100%', borderCollapse: 'collapse', background: 'white' }}>
-                <thead style={{ background: '#333', color: 'white' }}>
-                    <tr>
-                        <th>ID Venta</th>
-                        <th>Fecha y Hora</th>
-                        <th>Método Pago</th>
-                        <th>Total</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {ventas.map((venta) => (
-                        <tr key={venta.id} style={{ borderBottom: '1px solid #ddd' }}>
-                            <td>#{venta.id}</td>
-                            <td>{formatearFecha(venta.fecha)}</td>
-                            <td>
-                                <span style={{
-                                    padding: '5px 10px',
-                                    borderRadius: '15px',
-                                    background: venta.metodo_pago === 'Efectivo' ? '#d4edda' : '#cce5ff',
-                                    color: venta.metodo_pago === 'Efectivo' ? '#155724' : '#004085',
-                                    fontSize: '12px', fontWeight: 'bold'
-                                }}>
-                                    {venta.metodo_pago}
-                                </span>
-                            </td>
-                            <td style={{ fontWeight: 'bold' }}>${venta.total}</td>
-                        </tr>
-                    ))}
-                    {ventas.length === 0 && (
-                        <tr>
-                            <td colSpan="4" style={{ textAlign: 'center', padding: '20px' }}>No hay ventas registradas aún.</td>
-                        </tr>
-                    )}
-                </tbody>
-            </table>
+            {/* TABLA COMBINADA DE MOVIMIENTOS RECIENTES */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+
+                {/* Tabla Ventas */}
+                <div>
+                    <h3>Últimas Ventas</h3>
+                    <table style={{ width: '100%', fontSize: '14px', background: 'white' }}>
+                        <thead><tr style={{ background: '#eee' }}><th>Hora</th><th>Pago</th><th>Total</th></tr></thead>
+                        <tbody>
+                            {ventas.slice(0, 5).map(v => (
+                                <tr key={v.id} style={{ borderBottom: '1px solid #eee' }}>
+                                    <td>{v.fecha.slice(11, 16)}</td>
+                                    <td>{v.metodo_pago}</td>
+                                    <td style={{ color: 'green' }}>+${v.total}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+
+                {/* Tabla Gastos */}
+                <div>
+                    <h3>Últimos Gastos</h3>
+                    <table style={{ width: '100%', fontSize: '14px', background: 'white' }}>
+                        <thead><tr style={{ background: '#eee' }}><th>Hora</th><th>Motivo</th><th>Monto</th></tr></thead>
+                        <tbody>
+                            {gastos.length === 0 ? <tr><td colSpan="3">Sin gastos hoy</td></tr> :
+                                gastos.slice(0, 5).map(g => (
+                                    <tr key={g.id} style={{ borderBottom: '1px solid #eee' }}>
+                                        <td>{g.fecha.slice(11, 16)}</td>
+                                        <td>{g.descripcion}</td>
+                                        <td style={{ color: 'red', fontWeight: 'bold' }}>-${g.monto}</td>
+                                    </tr>
+                                ))}
+                        </tbody>
+                    </table>
+                </div>
+
+            </div>
         </div>
     );
 }
