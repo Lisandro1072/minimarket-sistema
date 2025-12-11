@@ -1,0 +1,66 @@
+/* src/index.css */
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  background-color: #f0f2f5;
+  /* Fondo gris suave moderno */
+  color: #333;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  justify-content: center;
+  /* Centra todo horizontalmente */
+  min-height: 100vh;
+}
+
+#root {
+  width: 100%;
+  max-width: 1200px;
+  /* Ancho máximo del sistema (tipo Facebook) */
+  background: white;
+  min-height: 100vh;
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.05);
+}
+
+/* Estilos para formularios y contenedores */
+.container {
+  padding: 2rem;
+}
+
+input {
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  font-size: 16px;
+}
+
+button {
+  cursor: pointer;
+  transition: background 0.3s;
+  font-weight: bold;
+}
+
+button:hover {
+  opacity: 0.9;
+}
+
+/* Tabla bonita */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
+}
+
+th,
+td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid #ddd;
+}
+
+th {
+  background-color: #f8f9fa;
+  color: #555;
+}
