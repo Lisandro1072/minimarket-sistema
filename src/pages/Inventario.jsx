@@ -5,16 +5,27 @@ function Inventario() {
     const [productos, setProductos] = useState([]);
     const [busqueda, setBusqueda] = useState('');
     const [modoEdicion, setModoEdicion] = useState(null);
+
     const [form, setForm] = useState({
-        codigo_barras: '', nombre: '', categoria: '',
-        precio_compra: '', precio_venta: '',
-        stock_actual: '', stock_minimo: 5
+        codigo_barras: '',
+        nombre: '',
+        categoria: '',
+        precio_compra: '',
+        precio_venta: '',
+        stock_actual: '',
+        stock_minimo: 5
     });
 
     useEffect(() => { fetchProductos(); }, []);
 
+    // 1. CARGAR SOLO PRODUCTOS ACTIVOS
     async function fetchProductos() {
-        const { data } = await supabase.from('productos').select('*').order('id', { ascending: false });
+        const { data } = await supabase
+            .from('productos')
+            .select('*')
+            .eq('activo', true) // <--- CLAVE: Solo traemos los activos
+            .order('id', { ascending: false });
+
         if (data) setProductos(data);
     }
 
@@ -24,30 +35,78 @@ function Inventario() {
         e.preventDefault();
         if (!form.nombre || !form.precio_venta) return alert("Nombre y Precio son obligatorios");
 
+        // Preparar datos limpios (convertir números y nulos)
+        const datosProducto = {
+            codigo_barras: form.codigo_barras.trim() === '' ? null : form.codigo_barras,
+            nombre: form.nombre,
+            categoria: form.categoria,
+            precio_compra: parseFloat(form.precio_compra) || 0,
+            precio_venta: parseFloat(form.precio_venta) || 0,
+            stock_actual: parseInt(form.stock_actual) || 0,
+            stock_minimo: parseInt(form.stock_minimo) || 5,
+            activo: true
+        };
+
         try {
             if (modoEdicion) {
-                await supabase.from('productos').update(form).eq('id', modoEdicion);
-                alert("Actualizado ✅");
+                // MODO EDITAR
+                const { error } = await supabase
+                    .from('productos')
+                    .update(datosProducto)
+                    .eq('id', modoEdicion);
+
+                if (error) throw error;
+                alert("Actualizado correctamente ✅");
+
             } else {
-                await supabase.from('productos').insert([form]);
-                alert("Creado ✅");
+                // MODO CREAR
+                const { error } = await supabase
+                    .from('productos')
+                    .insert([datosProducto]); // Supabase generará el ID solo
+
+                if (error) throw error;
+                alert("Producto creado ✅");
             }
+
             limpiarFormulario();
-            fetchProductos();
-        } catch (error) { alert(error.message); }
+            fetchProductos(); // Recargar la lista
+
+        } catch (error) {
+            console.error(error);
+            alert("Error: " + error.message);
+        }
     }
+
+    // 2. FUNCIÓN DE ELIMINAR (BORRADO LÓGICO)
+    const eliminarProducto = async (id) => {
+        if (window.confirm('¿Seguro que quieres borrar este producto?')) {
+            // En lugar de .delete(), hacemos .update(activo: false)
+            const { error } = await supabase
+                .from('productos')
+                .update({ activo: false })
+                .eq('id', id);
+
+            if (error) {
+                alert('No se pudo borrar: ' + error.message);
+            } else {
+                fetchProductos(); // Recargamos y el producto "desaparece"
+            }
+        }
+    };
 
     const cargarParaEditar = (prod) => {
         setModoEdicion(prod.id);
-        setForm(prod);
+        // Llenamos el formulario (asegurando que no haya nulls que rompan los inputs)
+        setForm({
+            codigo_barras: prod.codigo_barras || '',
+            nombre: prod.nombre,
+            categoria: prod.categoria || '',
+            precio_compra: prod.precio_compra,
+            precio_venta: prod.precio_venta,
+            stock_actual: prod.stock_actual,
+            stock_minimo: prod.stock_minimo || 5
+        });
         window.scrollTo({ top: 0, behavior: 'smooth' });
-    };
-
-    const eliminarProducto = async (id) => {
-        if (confirm('¿Borrar producto?')) {
-            await supabase.from('productos').delete().eq('id', id);
-            fetchProductos();
-        }
     };
 
     const limpiarFormulario = () => {
@@ -78,10 +137,10 @@ function Inventario() {
                     <input type="number" name="stock_actual" placeholder="Stock" value={form.stock_actual} onChange={handleChange} style={{ padding: '10px', borderRadius: '5px', border: '1px solid #ccc' }} />
 
                     <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '10px', marginTop: '10px' }}>
-                        <button type="submit" style={{ flex: 1, padding: '12px', background: modoEdicion ? '#007bff' : '#28a745', color: 'white', border: 'none', borderRadius: '5px', fontWeight: 'bold' }}>
+                        <button type="submit" style={{ flex: 1, padding: '12px', background: modoEdicion ? '#007bff' : '#28a745', color: 'white', border: 'none', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer' }}>
                             {modoEdicion ? 'Guardar Cambios' : 'Crear Producto'}
                         </button>
-                        {modoEdicion && <button type="button" onClick={limpiarFormulario} style={{ background: '#6c757d', color: 'white', border: 'none', padding: '10px', borderRadius: '5px' }}>Cancelar</button>}
+                        {modoEdicion && <button type="button" onClick={limpiarFormulario} style={{ background: '#6c757d', color: 'white', border: 'none', padding: '10px', borderRadius: '5px', cursor: 'pointer' }}>Cancelar</button>}
                     </div>
                 </form>
             </div>
@@ -104,22 +163,26 @@ function Inventario() {
                         </tr>
                     </thead>
                     <tbody>
-                        {filtrados.map(p => (
-                            <tr key={p.id}>
-                                <td>
-                                    <strong>{p.nombre}</strong><br />
-                                    <small style={{ color: '#888' }}>{p.codigo_barras}</small>
-                                </td>
-                                <td>{p.categoria}</td>
-                                <td>${p.precio_compra}</td>
-                                <td style={{ color: 'green', fontWeight: 'bold' }}>${p.precio_venta}</td>
-                                <td style={{ color: p.stock_actual <= p.stock_minimo ? 'red' : 'black', fontWeight: 'bold' }}>{p.stock_actual}</td>
-                                <td>
-                                    <button onClick={() => cargarParaEditar(p)} style={{ marginRight: '5px', border: 'none', background: 'none', cursor: 'pointer' }}>✏️</button>
-                                    <button onClick={() => eliminarProducto(p.id)} style={{ color: 'red', border: 'none', background: 'none', cursor: 'pointer' }}>🗑️</button>
-                                </td>
-                            </tr>
-                        ))}
+                        {filtrados.length === 0 ? (
+                            <tr><td colSpan="6" style={{ textAlign: 'center', color: '#888' }}>No hay productos activos.</td></tr>
+                        ) : (
+                            filtrados.map(p => (
+                                <tr key={p.id}>
+                                    <td>
+                                        <strong>{p.nombre}</strong><br />
+                                        <small style={{ color: '#888' }}>{p.codigo_barras || '-'}</small>
+                                    </td>
+                                    <td>{p.categoria || '-'}</td>
+                                    <td>${p.precio_compra}</td>
+                                    <td style={{ color: 'green', fontWeight: 'bold' }}>${p.precio_venta}</td>
+                                    <td style={{ color: p.stock_actual <= p.stock_minimo ? 'red' : 'black', fontWeight: 'bold' }}>{p.stock_actual}</td>
+                                    <td>
+                                        <button onClick={() => cargarParaEditar(p)} style={{ marginRight: '5px', border: 'none', background: 'none', cursor: 'pointer', fontSize: '18px' }}>✏️</button>
+                                        <button onClick={() => eliminarProducto(p.id)} style={{ color: 'red', border: 'none', background: 'none', cursor: 'pointer', fontSize: '18px' }}>🗑️</button>
+                                    </td>
+                                </tr>
+                            ))
+                        )}
                     </tbody>
                 </table>
             </div>

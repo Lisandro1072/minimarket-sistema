@@ -38,6 +38,7 @@ function Navbar() {
                     {user.rol === 'admin' && (
                         <>
                             <Link to="/inventario" className={`nav-item ${location.pathname === '/inventario' ? 'active' : ''}`}>Inventario</Link>
+                            <Link to="/cuentas" className="nav-item">📒 Deudas</Link> {/* <--- NUEVO */}
                             <Link to="/reportes" className={`nav-item ${location.pathname === '/reportes' ? 'active' : ''}`}>Reportes</Link>
                         </>
                     )}

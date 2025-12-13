@@ -5,6 +5,7 @@ import Venta from './pages/Venta';
 import Reportes from './pages/Reportes';
 import Login from './pages/Login';
 import { AuthProvider, useAuth } from './AuthProvider';
+import Cuentas from './pages/Cuentas';
 
 // Componente para proteger rutas
 const RutaProtegida = ({ children, rolRequerido }) => {
@@ -34,6 +35,12 @@ function App() {
           <Route path="/inventario" element={
             <RutaProtegida rolRequerido="admin">
               <Inventario />
+            </RutaProtegida>
+          } />
+
+          <Route path="/cuentas" element={
+            <RutaProtegida rolRequerido="admin">
+              <Cuentas />
             </RutaProtegida>
           } />
 
