@@ -11,6 +11,7 @@ function Venta() {
     const [mostrarModalGasto, setMostrarModalGasto] = useState(false);
     const [gastoForm, setGastoForm] = useState({ descripcion: '', monto: '' });
 
+    // 1. Cargar productos
     useEffect(() => {
         fetchProductos();
     }, []);
@@ -23,15 +24,23 @@ function Venta() {
         setProductos(data || []);
     }
 
-    // --- CORRECCIÓN MATEMÁTICA AQUÍ ---
+    // 2. LÓGICA DE SUMA BLINDADA (Corrige el error de $0.00 en móviles)
     useEffect(() => {
         const nuevoTotal = carrito.reduce((sum, item) => {
-            // Convertimos a número por si la base de datos lo manda como texto "15.00"
-            const precio = parseFloat(item.precio_venta) || 0;
-            return sum + (precio * item.cantidad);
+            // a. Convertimos a texto por seguridad
+            const precioTexto = String(item.precio_venta);
+            // b. Borramos cualquier cosa que NO sea número o punto (quita el $)
+            const precioLimpio = precioTexto.replace(/[^0-9.]/g, '');
+            // c. Convertimos a número real
+            const precioFinal = parseFloat(precioLimpio) || 0;
+
+            return sum + (precioFinal * item.cantidad);
         }, 0);
+
         setTotal(nuevoTotal);
     }, [carrito]);
+
+    // --- FUNCIONES DEL CARRITO ---
 
     const agregarAlCarrito = (producto) => {
         const existe = carrito.find(item => item.id === producto.id);
@@ -42,21 +51,43 @@ function Venta() {
         }
     };
 
+    // Función para botones + y -
     const ajustarCantidad = (id, cantidadAjuste) => {
         setCarrito(carrito => {
             return carrito.map(item => {
                 if (item.id === id) {
-                    return { ...item, cantidad: item.cantidad + cantidadAjuste };
+                    const nuevaCantidad = Math.max(0, item.cantidad + cantidadAjuste);
+                    return { ...item, cantidad: nuevaCantidad };
                 }
                 return item;
-            }).filter(item => item.cantidad > 0);
+            }).filter(item => item.cantidad > 0); // Si es 0 se elimina
         });
+    };
+
+    // Función para ESCRIBIR la cantidad manualmente (Ej: escribir "30" directo)
+    const cambiarCantidadManual = (id, valorInput) => {
+        const cantidad = parseInt(valorInput) || 0;
+        setCarrito(carrito => {
+            return carrito.map(item => {
+                if (item.id === id) {
+                    return { ...item, cantidad: cantidad };
+                }
+                return item;
+            });
+            // Nota: Aquí no filtramos el 0 inmediatamente para permitir borrar y escribir
+        });
+    };
+
+    // Función para limpiar ceros cuando dejas de escribir
+    const finalizarEdicionCantidad = () => {
+        setCarrito(carrito.filter(item => item.cantidad > 0));
     };
 
     const eliminarDelCarrito = (id) => {
         setCarrito(carrito.filter(item => item.id !== id));
     };
 
+    // --- PROCESAR VENTA ---
     const handleCobrar = async () => {
         if (carrito.length === 0) return;
         if (!window.confirm(`¿Cobrar $${total.toFixed(2)}?`)) return;
@@ -71,11 +102,15 @@ function Venta() {
             if (errorVenta) throw errorVenta;
 
             for (const item of carrito) {
+                // Limpieza de precio unitario para guardar en BD
+                const pTexto = String(item.precio_venta);
+                const pLimpio = parseFloat(pTexto.replace(/[^0-9.]/g, '')) || 0;
+
                 await supabase.from('detalle_ventas').insert([{
                     venta_id: ventaData.id,
                     producto_id: item.id,
                     cantidad: item.cantidad,
-                    precio_momento: item.precio_venta
+                    precio_momento: pLimpio
                 }]);
 
                 const prod = productos.find(p => p.id === item.id);
@@ -99,6 +134,7 @@ function Venta() {
         }
     };
 
+    // --- REGISTRO DE GASTOS ---
     const handleRegistrarGasto = async (e) => {
         e.preventDefault();
         if (!gastoForm.descripcion || !gastoForm.monto) return alert("Llena ambos campos");
@@ -151,7 +187,7 @@ function Venta() {
                 </div>
             </div>
 
-            {/* SECCIÓN DERECHA: TICKET */}
+            {/* SECCIÓN DERECHA: TICKET CON CONTROLES */}
             <div className="columna-ticket">
                 <div className="ticket-header">
                     <h3 style={{ margin: 0 }}>🛒 Ticket</h3>
@@ -165,18 +201,60 @@ function Venta() {
 
                 <div className="ticket-body">
                     {carrito.length === 0 ? <p style={{ textAlign: 'center', color: '#999' }}>Carrito vacío</p> : null}
-                    {carrito.map(item => (
-                        <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #eee', alignItems: 'center' }}>
-                            <div>
-                                <div style={{ fontWeight: 'bold' }}>{item.nombre}</div>
-                                <small style={{ color: '#666' }}>${item.precio_venta} x {item.cantidad}</small>
+
+                    {carrito.map(item => {
+                        // Cálculo seguro del subtotal visual
+                        const pTexto = String(item.precio_venta);
+                        const pLimpio = parseFloat(pTexto.replace(/[^0-9.]/g, '')) || 0;
+                        const subtotal = (item.cantidad * pLimpio).toFixed(2);
+
+                        return (
+                            <div key={item.id} style={{ padding: '10px 0', borderBottom: '1px solid #eee' }}>
+
+                                {/* Fila superior: Nombre y Subtotal */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                    <div style={{ fontWeight: 'bold' }}>{item.nombre}</div>
+                                    <div style={{ fontWeight: 'bold' }}>${subtotal}</div>
+                                </div>
+
+                                {/* Fila inferior: Controles de cantidad */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                        {/* Botón MENOS */}
+                                        <button
+                                            onClick={() => ajustarCantidad(item.id, -1)}
+                                            style={{ background: '#ddd', border: 'none', width: '30px', height: '30px', borderRadius: '5px', fontSize: '18px', cursor: 'pointer' }}
+                                        >-</button>
+
+                                        {/* Input para ESCRIBIR cantidad directa */}
+                                        <input
+                                            type="number"
+                                            value={item.cantidad}
+                                            onChange={(e) => cambiarCantidadManual(item.id, e.target.value)}
+                                            onBlur={finalizarEdicionCantidad} // Al salir del input, limpia si quedó vacío
+                                            style={{ width: '50px', textAlign: 'center', fontSize: '16px', padding: '5px', border: '1px solid #ccc', borderRadius: '5px' }}
+                                        />
+
+                                        {/* Botón MAS */}
+                                        <button
+                                            onClick={() => ajustarCantidad(item.id, 1)}
+                                            style={{ background: '#ddd', border: 'none', width: '30px', height: '30px', borderRadius: '5px', fontSize: '18px', cursor: 'pointer' }}
+                                        >+</button>
+                                    </div>
+
+                                    {/* Botón ELIMINAR */}
+                                    <button
+                                        onClick={() => eliminarDelCarrito(item.id)}
+                                        style={{ color: 'red', background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', textDecoration: 'underline' }}
+                                    >
+                                        Quitar
+                                    </button>
+                                </div>
+
                             </div>
-                            <div style={{ textAlign: 'right' }}>
-                                <div style={{ fontWeight: 'bold' }}>${(item.cantidad * item.precio_venta).toFixed(2)}</div>
-                                <button onClick={() => eliminarDelCarrito(item.id)} style={{ color: 'red', background: 'none', border: 'none', cursor: 'pointer', padding: '5px' }}>Quitar</button>
-                            </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
 
                 <div className="ticket-footer">
