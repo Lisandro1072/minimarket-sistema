@@ -1,50 +1,70 @@
-import { Link, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../AuthProvider';
 
 function Navbar() {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
-
-    const estiloNav = {
-        background: '#333',
-        padding: '1rem',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        color: 'white'
-    };
-
-    const estiloLink = { color: 'white', textDecoration: 'none', fontWeight: 'bold', marginRight: '20px' };
+    const location = useLocation(); // Para saber en qué página estamos
+    const [isOpen, setIsOpen] = useState(false); // Estado del menú
 
     const handleLogout = () => {
         logout();
+        setIsOpen(false);
         navigate('/login');
     };
 
-    // Si no hay usuario logueado, no mostramos el menú (o mostramos uno vacío)
+    // Función para cerrar menú al hacer clic en un enlace
+    const closeMenu = () => setIsOpen(false);
+
+    // Si no hay usuario, no mostramos nada (o solo el brand)
     if (!user) return null;
 
     return (
-        <nav style={estiloNav}>
-            <div>
-                <Link to="/" style={estiloLink}>🛒 Venta</Link>
+        <>
+            <nav className="navbar">
+                <div className="brand">
+                    <span>🛒</span> Mini Market
+                </div>
 
-                {/* SOLO ADMIN PUEDE VER ESTO */}
+                {/* Botón Hamburguesa */}
+                <button className="hamburger" onClick={() => setIsOpen(true)}>
+                    ☰
+                </button>
+
+                {/* Enlaces Desktop */}
+                <div className="nav-links">
+                    <Link to="/" className={`nav-item ${location.pathname === '/' ? 'active' : ''}`}>Punto de Venta</Link>
+                    {user.rol === 'admin' && (
+                        <>
+                            <Link to="/inventario" className={`nav-item ${location.pathname === '/inventario' ? 'active' : ''}`}>Inventario</Link>
+                            <Link to="/reportes" className={`nav-item ${location.pathname === '/reportes' ? 'active' : ''}`}>Reportes</Link>
+                        </>
+                    )}
+                    <button onClick={handleLogout} className="btn-logout">Salir</button>
+                </div>
+            </nav>
+
+            {/* Menú Lateral Móvil (Drawer) */}
+            <div className={`mobile-menu ${isOpen ? 'open' : ''}`}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: 'white', marginBottom: '20px' }}>
+                    <strong>Hola, {user.nombre}</strong>
+                    <span onClick={closeMenu} style={{ cursor: 'pointer', fontSize: '20px' }}>✕</span>
+                </div>
+
+                <Link to="/" className="mobile-link" onClick={closeMenu}>💰 Punto de Venta</Link>
                 {user.rol === 'admin' && (
                     <>
-                        <Link to="/inventario" style={estiloLink}>📦 Inventario</Link>
-                        <Link to="/reportes" style={estiloLink}>📊 Reportes</Link>
+                        <Link to="/inventario" className="mobile-link" onClick={closeMenu}>📦 Inventario</Link>
+                        <Link to="/reportes" className="mobile-link" onClick={closeMenu}>📊 Reportes</Link>
                     </>
                 )}
+                <button onClick={handleLogout} className="mobile-link" style={{ background: 'transparent', border: 'none', textAlign: 'left', color: '#ff6b6b', fontWeight: 'bold' }}>🚪 Cerrar Sesión</button>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span>Hola, {user.nombre} ({user.rol})</span>
-                <button onClick={handleLogout} style={{ background: 'red', border: 'none', color: 'white', padding: '5px 10px', fontSize: '12px' }}>
-                    Salir
-                </button>
-            </div>
-        </nav>
+            {/* Fondo oscuro al abrir menú */}
+            {isOpen && <div className="overlay" onClick={closeMenu}></div>}
+        </>
     );
 }
 
