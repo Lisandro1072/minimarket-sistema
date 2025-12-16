@@ -105,7 +105,7 @@ function Cuentas() {
                         {detalleCliente.ventas.map(v => (
                             <div key={v.id} style={{ border: '1px solid #ddd', padding: '10px', borderRadius: '8px', marginBottom: '10px', background: '#f9f9f9' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                    <strong>📅 {new Date(v.fecha).toLocaleDateString()}</strong>
+                                    <strong>📅 {formatoBolivia(v.fecha)}</strong>
                                     <strong style={{ color: '#dc3545' }}>${v.total.toFixed(2)}</strong>
                                 </div>
 

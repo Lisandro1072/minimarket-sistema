@@ -144,14 +144,23 @@ function Reportes() {
     // Exportaciones
     const exportarPDF = () => {
         const doc = new jsPDF();
+
+        // Encabezado del PDF
         doc.text(`Reporte (${rango})`, 14, 15);
         doc.text(`Ventas: $${resumen.totalVentas.toFixed(2)} | Ganancia: $${resumen.gananciaNeta.toFixed(2)}`, 14, 25);
+
+        // Generación de la tabla
         autoTable(doc, {
             head: [['Fecha', 'Método', 'Total']],
-            body: ventas.map(v => [v.fecha.slice(0, 16).replace('T', ' '), v.metodo_pago, `$${v.total}`]),
+            body: ventas.map(v => [
+                formatoBolivia(v.fecha), // <--- AQUÍ ESTÁ EL CAMBIO
+                v.metodo_pago,
+                `$${v.total}`
+            ]),
             startY: 35,
         });
-        doc.save(`reporte.pdf`);
+
+        doc.save(`reporte_${rango}.pdf`);
     };
 
     const exportarExcel = () => {
@@ -159,6 +168,21 @@ function Reportes() {
         const libro = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(libro, hoja, "Ventas");
         XLSX.writeFile(libro, `reporte.xlsx`);
+    };
+
+    // Función para convertir fecha UTC a Hora La Paz
+    // Función auxiliar para formatear hora Bolivia
+    const formatoBolivia = (fechaISO) => {
+        if (!fechaISO) return '-';
+        const fecha = new Date(fechaISO);
+        return fecha.toLocaleString('es-BO', {
+            timeZone: 'America/La_Paz',
+            year: '2-digit',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
     };
 
     return (
