@@ -4,13 +4,26 @@ import { useAuth } from '../AuthProvider';
 
 function Venta() {
     const { user } = useAuth();
+
+    // --- LISTA DE CATEGORÍAS (Igual que en Inventario) ---
+    const categoriasDisponibles = [
+        'Todos',
+        'Abarrotes',
+        'Bebidas',
+        'Snacks',
+        'Limpieza',
+        'Lácteos',
+        'Recargas',
+        'General'
+    ];
+
     const [productos, setProductos] = useState([]);
     const [busqueda, setBusqueda] = useState('');
     const [categoriaActiva, setCategoriaActiva] = useState('Todos');
     const [carrito, setCarrito] = useState([]);
     const [total, setTotal] = useState(0);
     const [metodoPago, setMetodoPago] = useState('Efectivo');
-    const [garantiaTexto, setGarantiaTexto] = useState(''); // NUEVO: Para guardar qué dejó de garantía
+    const [garantiaTexto, setGarantiaTexto] = useState('');
     const [procesando, setProcesando] = useState(false);
 
     // Modales
@@ -60,7 +73,6 @@ function Venta() {
     };
 
     const ajustarCantidad = (id, pasoReal) => {
-        // pasoReal puede ser +1, -1, +0.5, -0.5 (ya calculado antes o aqui)
         setCarrito(prev => prev.map(item => {
             if (item.id === id) {
                 const nueva = parseFloat((item.cantidad + pasoReal).toFixed(3));
@@ -71,7 +83,6 @@ function Venta() {
     };
 
     const botonAjuste = (id, direccion) => {
-        // direccion 1 o -1
         const item = carrito.find(i => i.id === id);
         if (!item) return;
         const esGranel = ['Lb', 'Kg', 'Lt'].includes(item.unidad);
@@ -96,19 +107,17 @@ function Venta() {
 
         setProcesando(true);
         try {
-            // 1. Registrar Venta con Garantía
             const { data: venta, error } = await supabase.from('ventas').insert([{
                 total,
                 metodo_pago: metodoPago,
                 estado: metodoPago === 'Fiado' ? 'pendiente' : 'pagado',
                 cliente_id: metodoPago === 'Fiado' ? clienteSeleccionado : null,
                 usuario_id: user.id,
-                garantia: metodoPago === 'Fiado' ? garantiaTexto : null // <--- GUARDAR OBJETO DEJADO
+                garantia: metodoPago === 'Fiado' ? garantiaTexto : null
             }]).select().single();
 
             if (error) throw error;
 
-            // 2. Registrar Detalles y Restar Stock
             for (const item of carrito) {
                 await supabase.from('detalle_ventas').insert([{
                     venta_id: venta.id, producto_id: item.id, cantidad: item.cantidad, precio_momento: item.precio_venta
@@ -123,33 +132,39 @@ function Venta() {
                 }
             }
 
-            // 3. Confirmación
             if (metodoPago === 'Fiado' && garantiaTexto) {
                 alert(`✅ Fiado registrado con Garantía.\n\n🏷️ ETIQUETA LA BOLSA CON EL ID: #${venta.id}`);
             } else {
                 alert("Venta registrada ✅");
             }
 
-            // Limpieza
-            setCarrito([]);
-            setMetodoPago('Efectivo');
-            setClienteSeleccionado('');
-            setGarantiaTexto('');
-            fetchProductos();
+            setCarrito([]); setMetodoPago('Efectivo'); setClienteSeleccionado(''); setGarantiaTexto(''); fetchProductos();
         } catch (err) { alert(err.message); }
         finally { setProcesando(false); }
     };
 
-    // --- FILTROS ---
+    // --- FILTROS MEJORADOS (MUESTRA TODAS LAS CATEGORÍAS) ---
     const productosVisibles = productos.filter(p => {
         const matchBusqueda = p.nombre.toLowerCase().includes(busqueda.toLowerCase());
-        const matchCat = categoriaActiva === 'Todos' ? true :
-            categoriaActiva === 'Abarrotes' ? (p.categoria === 'Abarrotes' || ['Lb', 'Kg'].includes(p.unidad)) :
-                categoriaActiva === 'Recargas' ? (p.categoria === 'Recargas' || !p.controlar_stock) : true;
+
+        let matchCat = true;
+        if (categoriaActiva === 'Todos') {
+            matchCat = true;
+        } else if (categoriaActiva === 'Abarrotes') {
+            // Abarrotes incluye la categoría explícita O productos pesables
+            matchCat = (p.categoria === 'Abarrotes' || ['Lb', 'Kg', 'Lt'].includes(p.unidad));
+        } else if (categoriaActiva === 'Recargas') {
+            // Recargas incluye la categoría explícita O servicios sin stock
+            matchCat = (p.categoria === 'Recargas' || !p.controlar_stock);
+        } else {
+            // Para Bebidas, Snacks, Limpieza, etc. busca coincidencia exacta
+            matchCat = p.categoria === categoriaActiva;
+        }
+
         return matchBusqueda && matchCat;
     });
 
-    // --- EXTRAS: GASTOS Y CIERRE ---
+    // --- EXTRAS ---
     const handleRegistrarGasto = async (e) => {
         e.preventDefault();
         if (!gastoForm.descripcion || !gastoForm.monto) return;
@@ -161,7 +176,7 @@ function Venta() {
         alert("Salida registrada");
     };
 
-    const handleCrearCliente = async () => { /* ... Misma lógica crear cliente ... */
+    const handleCrearCliente = async () => {
         if (!nuevoCliente.nombre) return alert("Nombre requerido");
         const { data } = await supabase.from('clientes').insert([nuevoCliente]).select().single();
         if (data) {
@@ -170,7 +185,6 @@ function Venta() {
     };
 
     const calcularResumenDia = async () => {
-        /* ... Lógica de cierre ciego ... */
         const hoy = new Date().toISOString().slice(0, 10);
         const { data: v } = await supabase.from('ventas').select('total, metodo_pago').gte('fecha', `${hoy}T00:00:00`).lte('fecha', `${hoy}T23:59:59`);
         const { data: g } = await supabase.from('movimientos_caja').select('monto').eq('tipo', 'salida').gte('fecha', `${hoy}T00:00:00`).lte('fecha', `${hoy}T23:59:59`);
@@ -194,20 +208,30 @@ function Venta() {
         <div className="venta-container">
             {/* IZQUIERDA: PRODUCTOS */}
             <div className="columna-productos">
-                <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', overflowX: 'auto' }}>
-                    {['Todos', 'Abarrotes', 'Recargas'].map(cat => (
+
+                {/* BARRA DE CATEGORÍAS (SCROLL HORIZONTAL) */}
+                <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', overflowX: 'auto', paddingBottom: '5px', whiteSpace: 'nowrap' }}>
+                    {categoriasDisponibles.map(cat => (
                         <button key={cat} onClick={() => setCategoriaActiva(cat)}
                             style={{
                                 padding: '10px 15px', borderRadius: '20px', border: 'none',
-                                background: categoriaActiva === cat ? '#28a745' : '#ddd',
-                                color: categoriaActiva === cat ? 'white' : '#333', fontWeight: 'bold', cursor: 'pointer'
+                                background: categoriaActiva === cat ? '#28a745' : '#e9ecef',
+                                color: categoriaActiva === cat ? 'white' : '#495057',
+                                fontWeight: 'bold', cursor: 'pointer', flexShrink: 0,
+                                boxShadow: categoriaActiva === cat ? '0 2px 5px rgba(40, 167, 69, 0.3)' : 'none'
                             }}>
-                            {cat}
+                            {cat === 'Abarrotes' ? '⚖️ Abarrotes' :
+                                cat === 'Recargas' ? '📱 Recargas' :
+                                    cat === 'Bebidas' ? '🥤 Bebidas' :
+                                        cat === 'Snacks' ? '🍪 Snacks' :
+                                            cat === 'Limpieza' ? '🧹 Limpieza' :
+                                                cat === 'Lácteos' ? '🥛 Lácteos' :
+                                                    cat}
                         </button>
                     ))}
                 </div>
 
-                <input placeholder="Buscar..." value={busqueda} onChange={e => setBusqueda(e.target.value)}
+                <input placeholder="🔍 Buscar producto..." value={busqueda} onChange={e => setBusqueda(e.target.value)}
                     style={{ width: '95%', padding: '12px', marginBottom: '20px', borderRadius: '8px', border: '1px solid #ccc' }} />
 
                 <div className="grid-productos">
@@ -223,11 +247,17 @@ function Venta() {
 
             {/* DERECHA: TICKET */}
             <div className="columna-ticket">
-                <div className="ticket-header">
-                    <h3>🛒 Ticket</h3>
-                    <div style={{ display: 'flex', gap: '5px' }}>
-                        <button onClick={calcularResumenDia} style={{ background: '#6f42c1', color: 'white', border: 'none', padding: '8px', borderRadius: '5px', cursor: 'pointer' }} title="Cierre Cajero">👤 Mi Caja</button>
-                        <button onClick={() => setMostrarModalGasto(true)} style={{ background: '#dc3545', color: 'white', border: 'none', padding: '8px', borderRadius: '5px', cursor: 'pointer' }}>💸 Gasto</button>
+                <div className="ticket-header" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
+                    <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <h3 style={{ margin: 0 }}>🛒 Ticket</h3>
+                        <div style={{ display: 'flex', gap: '5px' }}>
+                            <button onClick={calcularResumenDia} style={{ background: '#6f42c1', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '5px', cursor: 'pointer', fontSize: '12px' }}>👤 Caja</button>
+                            <button onClick={() => setMostrarModalGasto(true)} style={{ background: '#dc3545', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '5px', cursor: 'pointer', fontSize: '12px' }}>💸 Gasto</button>
+                        </div>
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#666', marginTop: '5px', width: '100%', textAlign: 'center', borderBottom: '1px dashed #ccc', paddingBottom: '5px' }}>
+                        <strong>MINI MARKET "MAMACHELA II"</strong><br />
+                        Av. Kollasuyo # - Tel: 69809585
                     </div>
                 </div>
 
@@ -281,7 +311,8 @@ function Venta() {
                 </div>
             </div>
 
-            {/* --- MODAL GASTO --- */}
+            {/* --- MODALES --- */}
+            {/* Modal Gasto */}
             {mostrarModalGasto && (
                 <div className="overlay" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000 }}>
                     <div className="card" style={{ width: '300px' }}>
@@ -300,7 +331,7 @@ function Venta() {
                 </div>
             )}
 
-            {/* --- MODAL CLIENTE --- */}
+            {/* Modal Cliente */}
             {mostrarModalCliente && (
                 <div className="overlay" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000 }}>
                     <div className="card" style={{ width: '300px' }}>
@@ -315,7 +346,7 @@ function Venta() {
                 </div>
             )}
 
-            {/* --- MODAL CIERRE CAJERO --- */}
+            {/* Modal Cierre */}
             {mostrarModalCierre && (
                 <div className="overlay" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000 }}>
                     <div className="card" style={{ width: '350px', textAlign: 'center' }}>
